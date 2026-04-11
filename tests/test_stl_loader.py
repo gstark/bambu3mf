@@ -69,9 +69,13 @@ class TestLoadStl:
 
     def test_plate_offset_shifts_transform(self):
         import lib3mf
+        from bambu3mf.stl_loader import update_build_item_plate_offset
 
         model = lib3mf.Wrapper().CreateModel()
-        load_stl(model, str(CUBE_STL), plate_offset_x=307.2, plate_offset_y=-307.2)
+        result = load_stl(model, str(CUBE_STL))
+        update_build_item_plate_offset(
+            model, result["resource_id"], result["center_offset"],
+            307.2, -307.2)
         it = model.GetBuildItems()
         it.MoveNext()
         t = it.GetCurrent().GetObjectTransform()

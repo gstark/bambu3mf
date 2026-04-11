@@ -23,7 +23,9 @@ Example layout for 5 plates on a 256mm bed (3 columns)::
 
 import math
 
-from bambu3mf.stl_loader import load_stl, load_stl_as_mesh, create_component_group
+from bambu3mf.stl_loader import (load_stl, load_stl_as_mesh,
+                                  create_component_group,
+                                  update_build_item_plate_offset)
 
 # Matches LOGICAL_PART_PLATE_GAP in src/slic3r/GUI/PartPlate.cpp:52
 PLATE_GAP_RATIO = 1.0 / 5.0
@@ -89,19 +91,17 @@ class Plate:
             ``bounding_box``.
         """
         from pathlib import Path as _Path
-        ox, oy = self._plate_origin()
         result = load_stl(
             self._project._model, path,
             bed_size=self._project.bed_size,
             position=position,
-            plate_offset_x=ox,
-            plate_offset_y=oy,
         )
         self.objects.append({
             "object_id": result["resource_id"],
             "instance_id": 0,
             "name": _Path(path).stem,
             "extruder": extruder,
+            "_center_offset": result["center_offset"],
         })
         return result
 
@@ -137,8 +137,6 @@ class Plate:
             self._project._model, meshes,
             bed_size=self._project.bed_size,
             position=position,
-            plate_offset_x=ox,
-            plate_offset_y=oy,
         )
 
         self.objects.append({
@@ -147,5 +145,22 @@ class Plate:
             "name": parts[0]["name"] if parts else "group",
             "extruder": 1,
             "parts": parts,
+            "_center_offset": group["center_offset"],
         })
         return group
+
+    def _apply_plate_offsets(self):
+        """Recompute and apply plate grid offsets for all grouped objects.
+
+        Called at save time after all plates are added and grid positions
+        are finalized.
+        """
+        ox, oy = self._plate_origin()
+        for obj in self.objects:
+            if "_center_offset" in obj:
+                update_build_item_plate_offset(
+                    self._project._model,
+                    obj["object_id"],
+                    obj["_center_offset"],
+                    ox, oy,
+                )

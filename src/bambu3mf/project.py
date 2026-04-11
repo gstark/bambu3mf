@@ -122,6 +122,8 @@ class BambuProject:
         4. ``model_settings.config`` (XML) is appended with per-object metadata
            and plate layout (only when plates exist).
         """
+        for plate in self.plates:
+            plate._apply_plate_offsets()
         writer = self._model.QueryWriter("3mf")
         writer.WriteToFile(path)
         self._inject_bambu_metadata(path)
