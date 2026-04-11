@@ -23,7 +23,7 @@ Example layout for 5 plates on a 256mm bed (3 columns)::
 
 import math
 
-from bambu3mf.stl_loader import load_stl
+from bambu3mf.stl_loader import load_stl, load_stl_as_mesh, create_component_group
 
 # Matches LOGICAL_PART_PLATE_GAP in src/slic3r/GUI/PartPlate.cpp:52
 PLATE_GAP_RATIO = 1.0 / 5.0
@@ -104,3 +104,48 @@ class Plate:
             "extruder": extruder,
         })
         return result
+
+    def add_stl_group(self, stl_entries, *, position=None):
+        """Add multiple STLs as parts of a single grouped object on this plate.
+
+        This creates a lib3mf ComponentsObject that groups the meshes, so they
+        share a single transform and move as a unit in BambuStudio.
+
+        Args:
+            stl_entries: List of ``(path, extruder)`` tuples.
+            position: ``(x, y)`` for the group's bounding-box min corner.
+                If None, auto-centers on the plate.
+
+        Returns:
+            Dict with ``resource_id`` of the component object.
+        """
+        from pathlib import Path as _Path
+        ox, oy = self._plate_origin()
+
+        parts = []
+        meshes = []
+        for path, extruder in stl_entries:
+            result = load_stl_as_mesh(self._project._model, path)
+            meshes.append(result["mesh"])
+            parts.append({
+                "object_id": result["resource_id"],
+                "name": _Path(path).stem,
+                "extruder": extruder,
+            })
+
+        group = create_component_group(
+            self._project._model, meshes,
+            bed_size=self._project.bed_size,
+            position=position,
+            plate_offset_x=ox,
+            plate_offset_y=oy,
+        )
+
+        self.objects.append({
+            "object_id": group["resource_id"],
+            "instance_id": 0,
+            "name": parts[0]["name"] if parts else "group",
+            "extruder": 1,
+            "parts": parts,
+        })
+        return group

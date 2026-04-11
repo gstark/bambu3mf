@@ -118,6 +118,87 @@ def _bounding_box(mesh):
     }
 
 
+def load_stl_as_mesh(model, path):
+    """Load an STL into the model as a mesh object without a build item.
+
+    Used for component parts that will be grouped into a ComponentsObject.
+    The auto-created build item is removed, leaving just the mesh resource.
+
+    Returns:
+        Dict with ``resource_id``, ``vertex_count``, ``triangle_count``,
+        ``bounding_box``, and ``mesh`` (the lib3mf mesh object).
+    """
+    if not Path(path).exists():
+        raise FileNotFoundError(f"STL file not found: {path}")
+
+    reader = model.QueryReader("stl")
+    reader.ReadFromFile(str(path))
+
+    mesh = _get_last_mesh(model)
+    mesh.SetName(Path(path).stem)
+
+    # Remove the auto-created build item — we'll add a component instead
+    bi = _get_last_build_item(model)
+    model.RemoveBuildItem(bi)
+
+    bb = _bounding_box(mesh)
+    return {
+        "resource_id": mesh.GetResourceID(),
+        "vertex_count": mesh.GetVertexCount(),
+        "triangle_count": mesh.GetTriangleCount(),
+        "bounding_box": bb,
+        "mesh": mesh,
+    }
+
+
+def create_component_group(model, meshes, *, bed_size=(256, 256),
+                           position=None, plate_offset_x=0.0,
+                           plate_offset_y=0.0):
+    """Group multiple mesh objects into a single ComponentsObject with one build item.
+
+    Args:
+        model: A lib3mf Model instance.
+        meshes: List of lib3mf mesh objects to group.
+        bed_size: ``(width, height)`` of the print bed in mm.
+        position: ``(x, y)`` for the group's bounding-box min corner.
+            If None, auto-centers on the bed.
+        plate_offset_x: Additional X translation for plate grid cell.
+        plate_offset_y: Additional Y translation for plate grid cell.
+
+    Returns:
+        Dict with ``resource_id`` (of the component object).
+    """
+    identity = _identity_transform()
+    comp_obj = model.AddComponentsObject()
+    for mesh in meshes:
+        comp_obj.AddComponent(mesh, identity)
+
+    # Compute combined bounding box
+    all_bbs = [_bounding_box(m) for m in meshes]
+    combined_bb = {
+        "min_x": min(b["min_x"] for b in all_bbs),
+        "max_x": max(b["max_x"] for b in all_bbs),
+        "min_y": min(b["min_y"] for b in all_bbs),
+        "max_y": max(b["max_y"] for b in all_bbs),
+    }
+
+    if position is not None:
+        tx = position[0] - combined_bb["min_x"]
+        ty = position[1] - combined_bb["min_y"]
+    else:
+        cx = (combined_bb["min_x"] + combined_bb["max_x"]) / 2
+        cy = (combined_bb["min_y"] + combined_bb["max_y"]) / 2
+        tx = bed_size[0] / 2 - cx
+        ty = bed_size[1] / 2 - cy
+
+    t = _identity_transform()
+    t.Fields[3][0] = tx + plate_offset_x
+    t.Fields[3][1] = ty + plate_offset_y
+    model.AddBuildItem(comp_obj, t)
+
+    return {"resource_id": comp_obj.GetResourceID()}
+
+
 def _identity_transform():
     """Create a lib3mf Transform initialized to the identity matrix."""
     t = lib3mf.Transform()

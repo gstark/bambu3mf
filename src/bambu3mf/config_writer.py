@@ -46,6 +46,12 @@ def generate_project_config(plates):
             obj_el.set("id", str(obj["object_id"]))
             _add_metadata(obj_el, "name", obj.get("name", "Object"))
             _add_metadata(obj_el, "extruder", extruder)
+            for part in obj.get("parts", []):
+                part_el = ET.SubElement(obj_el, "part")
+                part_el.set("id", str(part["object_id"]))
+                part_el.set("subtype", "normal_part")
+                _add_metadata(part_el, "name", part.get("name", "Part"))
+                _add_metadata(part_el, "extruder", str(part.get("extruder", 1)))
         plate_el = ET.SubElement(root, "plate")
         _add_metadata(plate_el, "plater_id", str(plate.plate_id))
         _add_metadata(plate_el, "plater_name", plate.name)
