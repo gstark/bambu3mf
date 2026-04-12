@@ -66,7 +66,8 @@ def generate_project_config(plates):
 DEFAULT_FILAMENT_COLOUR = "#00AE42"
 
 
-def generate_project_settings(*, bed_size, printer_settings_id="", filaments=None):
+def generate_project_settings(*, bed_size, printer_settings_id="",
+                              print_settings_id="", filaments=None):
     """Generate ``project_settings.config`` JSON.
 
     Args:
@@ -88,6 +89,8 @@ def generate_project_settings(*, bed_size, printer_settings_id="", filaments=Non
     }
     if printer_settings_id:
         settings["printer_settings_id"] = printer_settings_id
+    if print_settings_id:
+        settings["print_settings_id"] = print_settings_id
     if filaments:
         settings["filament_settings_id"] = [
             f.get("settings_id", "") for f in filaments

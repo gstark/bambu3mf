@@ -83,11 +83,12 @@ class BambuProject:
     """
 
     def __init__(self, *, bed_size=DEFAULT_BED_SIZE, app_version=None,
-                 printer_settings_id="", filament_settings_id=None,
-                 filaments=None):
+                 printer_settings_id="", print_settings_id="",
+                 filament_settings_id=None, filaments=None):
         self.bed_size = bed_size
         self.app_version = app_version or BAMBU_APPLICATION
         self.printer_settings_id = printer_settings_id
+        self.print_settings_id = print_settings_id
         if filaments:
             self.filaments = filaments
             self.filament_settings_id = filament_settings_id
@@ -174,6 +175,7 @@ class BambuProject:
         settings_json = generate_project_settings(
             bed_size=self.bed_size,
             printer_settings_id=self.printer_settings_id,
+            print_settings_id=self.print_settings_id,
             filaments=self.filaments,
         )
         with zipfile.ZipFile(path, "a", zipfile.ZIP_DEFLATED) as z:
