@@ -34,6 +34,7 @@ BambuStudio compatibility notes (discovered empirically):
 import re
 import zipfile
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import lib3mf
 
@@ -71,6 +72,9 @@ class BambuProject:
             Defaults to (256, 256) for P1/X1 series printers.
         app_version: Override the Application metadata string.
             Must match the target BambuStudio version to avoid warnings.
+        description: Optional 3MF Description metadata text.
+            May contain HTML-formatted content; it is XML-escaped before
+            being stored in ``3D/3dmodel.model``.
         printer_settings_id: System preset name for the printer,
             e.g. ``"Bambu Lab P1P 0.4 nozzle"``.  Must match a preset
             known to BambuStudio to avoid the "Customized Preset" dialog.
@@ -83,10 +87,11 @@ class BambuProject:
     """
 
     def __init__(self, *, bed_size=DEFAULT_BED_SIZE, app_version=None,
-                 printer_settings_id="", print_settings_id="",
+                 description=None, printer_settings_id="", print_settings_id="",
                  filament_settings_id=None, filaments=None):
         self.bed_size = bed_size
         self.app_version = app_version or BAMBU_APPLICATION
+        self.description = description
         self.printer_settings_id = printer_settings_id
         self.print_settings_id = print_settings_id
         if filaments:
@@ -140,10 +145,15 @@ class BambuProject:
         before ``<resources>``.  This is done via regex substitution on the
         XML text because lib3mf has no API for custom namespaces.
         """
-        metadata_xml = (
-            f'\t<metadata name="BambuStudio:3mfVersion">{BAMBU_3MF_VERSION}</metadata>\n'
-            f'\t<metadata name="Application">{self.app_version}</metadata>\n'
-        )
+        metadata_lines = [
+            f'\t<metadata name="BambuStudio:3mfVersion">{escape(BAMBU_3MF_VERSION)}</metadata>',
+            f'\t<metadata name="Application">{escape(self.app_version)}</metadata>',
+        ]
+        if self.description is not None:
+            metadata_lines.append(
+                f'\t<metadata name="Description">{escape(self.description)}</metadata>'
+            )
+        metadata_xml = "\n".join(metadata_lines) + "\n"
         with zipfile.ZipFile(path, "r") as zin:
             names = zin.namelist()
             contents = {}

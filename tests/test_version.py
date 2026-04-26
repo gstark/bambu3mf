@@ -55,6 +55,23 @@ class TestAppVersionConfigurable:
         }
         assert metadata["Application"] == "BambuStudio-99.00.00.01"
 
+    def test_description_does_not_affect_application_metadata(self, tmp_path):
+        out = tmp_path / "out.3mf"
+        project = BambuProject(
+            app_version="BambuStudio-99.00.00.01",
+            description="<p>Project</p>",
+        )
+        project.save(str(out))
+        with zipfile.ZipFile(out) as z:
+            xml_bytes = z.read("3D/3dmodel.model")
+        root = ET.fromstring(xml_bytes)
+        ns = root.tag.split("}")[0] + "}" if "}" in root.tag else ""
+        metadata = {
+            m.get("name"): m.text for m in root.findall(f"{ns}metadata")
+        }
+        assert metadata["Application"] == "BambuStudio-99.00.00.01"
+        assert metadata["Description"] == "<p>Project</p>"
+
     def test_default_app_version_uses_module_constant(self, tmp_path):
         out = tmp_path / "out.3mf"
         project = BambuProject()

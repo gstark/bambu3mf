@@ -103,6 +103,21 @@ plate.add_stl("small_part.stl")
 project.save("a1_mini.3mf")
 ```
 
+### Description Metadata
+
+```python
+from bambu3mf import BambuProject
+
+project = BambuProject(
+    description="<p>Print-in-place gearbox with 0.2mm clearance.</p>",
+)
+plate = project.add_plate(name="Main")
+plate.add_stl("gearbox.stl")
+project.save("described.3mf")
+```
+
+`description` is written to `<metadata name="Description">...</metadata>` in `3D/3dmodel.model`. If the value contains HTML-like text, it is XML-escaped in the 3MF archive.
+
 ## API Reference
 
 ### `BambuProject`
@@ -114,6 +129,7 @@ BambuProject(
     printer_settings_id="",     # BambuStudio printer preset name
     filaments=None,             # list of filament dicts (see below)
     app_version=None,           # override Application metadata
+    description=None,           # optional 3MF Description metadata (HTML text is XML-escaped)
 )
 ```
 

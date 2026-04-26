@@ -9,10 +9,15 @@ class TestBambuProjectInit:
     def test_default_bed_size(self):
         project = BambuProject()
         assert project.bed_size == (256, 256)
+        assert project.description is None
 
     def test_custom_bed_size(self):
         project = BambuProject(bed_size=(180, 180))
         assert project.bed_size == (180, 180)
+
+    def test_description(self):
+        project = BambuProject(description="Project summary")
+        assert project.description == "Project summary"
 
 
 class TestBambuProjectSave:
@@ -86,6 +91,52 @@ class TestBambuProjectSave:
         }
         assert "Application" in metadata
         assert metadata["Application"].startswith("BambuStudio-")
+
+    def test_model_xml_omits_description_metadata_by_default(self, tmp_path):
+        out = tmp_path / "out.3mf"
+        BambuProject().save(str(out))
+        with zipfile.ZipFile(out) as z:
+            xml_bytes = z.read("3D/3dmodel.model")
+        root = ET.fromstring(xml_bytes)
+        ns = root.tag.split("}")[0] + "}" if "}" in root.tag else ""
+        metadata = {
+            m.get("name"): m.text
+            for m in root.findall(f"{ns}metadata")
+        }
+        assert "Description" not in metadata
+
+    def test_model_xml_has_description_metadata(self, tmp_path):
+        out = tmp_path / "out.3mf"
+        BambuProject(description="Print-in-place gearbox").save(str(out))
+        with zipfile.ZipFile(out) as z:
+            xml_bytes = z.read("3D/3dmodel.model")
+        root = ET.fromstring(xml_bytes)
+        ns = root.tag.split("}")[0] + "}" if "}" in root.tag else ""
+        metadata = {
+            m.get("name"): m.text
+            for m in root.findall(f"{ns}metadata")
+        }
+        assert metadata["Description"] == "Print-in-place gearbox"
+
+    def test_model_xml_escapes_html_description_metadata(self, tmp_path):
+        out = tmp_path / "out.3mf"
+        description = "<b>A&B</b><br/>"
+        BambuProject(description=description).save(str(out))
+        with zipfile.ZipFile(out) as z:
+            xml_text = z.read("3D/3dmodel.model").decode()
+            xml_bytes = z.read("3D/3dmodel.model")
+        assert (
+            '<metadata name="Description">'
+            '&lt;b&gt;A&amp;B&lt;/b&gt;&lt;br/&gt;'
+            '</metadata>'
+        ) in xml_text
+        root = ET.fromstring(xml_bytes)
+        ns = root.tag.split("}")[0] + "}" if "}" in root.tag else ""
+        metadata = {
+            m.get("name"): m.text
+            for m in root.findall(f"{ns}metadata")
+        }
+        assert metadata["Description"] == description
 
     def test_save_with_custom_bed_size(self, tmp_path):
         out = tmp_path / "out.3mf"
