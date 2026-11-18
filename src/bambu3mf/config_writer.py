@@ -52,6 +52,7 @@ def generate_project_config(plates):
                 part_el.set("subtype", "normal_part")
                 _add_metadata(part_el, "name", part.get("name", "Part"))
                 _add_metadata(part_el, "extruder", str(part.get("extruder", 1)))
+    for plate in plates:
         plate_el = ET.SubElement(root, "plate")
         _add_metadata(plate_el, "plater_id", str(plate.plate_id))
         _add_metadata(plate_el, "plater_name", plate.name)
@@ -67,7 +68,8 @@ DEFAULT_FILAMENT_COLOUR = "#00AE42"
 
 
 def generate_project_settings(*, bed_size, printer_settings_id="",
-                              print_settings_id="", filaments=None):
+                              print_settings_id="", filaments=None,
+                              preset_settings=None):
     """Generate ``project_settings.config`` JSON.
 
     Args:
@@ -77,16 +79,37 @@ def generate_project_settings(*, bed_size, printer_settings_id="",
         filaments: List of dicts with optional keys ``settings_id``,
             ``colour`` (hex string, default ``#00AE42``),
             ``type`` (default ``"PLA"``), ``diameter`` (default ``"1.75"``).
+        preset_settings: Complete settings from
+            :meth:`bambu3mf.presets.PresetLibrary.project_settings`.  When
+            given, they are the base of the file.  ``type`` and ``diameter``
+            then come from the presets unless a filament dict sets them.
 
     All filament arrays must have the same length — BambuStudio indexes
     them by extruder number (0-based internally, 1-based in user-facing UI).
     """
     w, h = bed_size
-    settings = {
+    settings = dict(preset_settings or {})
+    settings.update({
         "name": "project_settings",
         "from": "project",
         "printable_area": ["0x0", f"{w}x0", f"{w}x{h}", f"0x{h}"],
-    }
+    })
+    if preset_settings:
+        if filaments:
+            settings["filament_colour"] = [
+                f.get("colour", DEFAULT_FILAMENT_COLOUR) for f in filaments
+            ]
+            for key, option in (("type", "filament_type"),
+                                ("diameter", "filament_diameter")):
+                settings[option] = [
+                    f.get(key, preset)
+                    for f, preset in zip(filaments, settings[option])
+                ]
+        else:
+            settings["filament_colour"] = [DEFAULT_FILAMENT_COLOUR] * len(
+                settings["filament_settings_id"]
+            )
+        return json.dumps(settings, indent=4)
     if printer_settings_id:
         settings["printer_settings_id"] = printer_settings_id
     if print_settings_id:

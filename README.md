@@ -118,6 +118,31 @@ project.save("described.3mf")
 
 `description` is written to `<metadata name="Description">...</metadata>` in `3D/3dmodel.model`. If the value contains HTML-like text, it is XML-escaped in the 3MF archive.
 
+### Slicing with the BambuStudio CLI
+
+The BambuStudio CLI needs complete settings in the file. It segfaults on a file that holds only preset names.
+
+When `printer_settings_id` is set, `save` reads the system presets of the installed BambuStudio and writes the complete settings. `print_settings_id` and the filament presets default to the defaults of the printer.
+
+```python
+project = BambuProject(
+    printer_settings_id="Bambu Lab P1P 0.4 nozzle",
+    print_settings_id="0.20mm Standard @BBL P1P",
+    filaments=[{"settings_id": "Bambu PLA Basic @BBL P1P", "colour": "#FF0000"}],
+)
+project.add_plate().add_stl("part.stl")
+project.save("part.3mf")
+```
+
+```bash
+BambuStudio --slice 0 --outputdir "$PWD/out" --export-3mf sliced.3mf part.3mf
+```
+
+- `save` finds the profile folder on macOS and Windows. On other systems, pass `profiles_dir` (the `resources/profiles` folder of BambuStudio).
+- If no profile folder is found, `save` writes only the preset names. The GUI can open that file. The CLI cannot.
+- If a preset name is not in the profile folder, `save` gives a warning and writes only the preset names.
+- `bed_size` defaults to the `printable_area` of the printer preset. If you pass `bed_size`, it must match the printer.
+
 ## API Reference
 
 ### `BambuProject`
@@ -125,11 +150,12 @@ project.save("described.3mf")
 ```python
 BambuProject(
     *,
-    bed_size=(256, 256),        # (width, height) in mm
+    bed_size=None,              # (width, height) in mm (default: from the printer preset, else 256 x 256)
     printer_settings_id="",     # BambuStudio printer preset name
     filaments=None,             # list of filament dicts (see below)
     app_version=None,           # override Application metadata
     description=None,           # optional 3MF Description metadata (HTML text is XML-escaped)
+    profiles_dir=None,          # BambuStudio profile folder (default: the installed app)
 )
 ```
 

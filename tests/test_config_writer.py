@@ -129,6 +129,19 @@ class TestGenerateProjectConfigObjectMetadata:
         ids = [o.get("id") for o in objects]
         assert ids == ["1", "2", "3"]
 
+    def test_all_objects_before_all_plates(self):
+        p1 = Plate(plate_id=1)
+        p1.objects = [
+            {"object_id": 1, "instance_id": 0, "name": "a", "extruder": 1},
+        ]
+        p2 = Plate(plate_id=2)
+        p2.objects = [
+            {"object_id": 2, "instance_id": 0, "name": "b", "extruder": 1},
+        ]
+        xml = generate_project_config([p1, p2])
+        tags = [child.tag for child in _parse(xml)]
+        assert tags == ["object", "object", "plate", "plate"]
+
 
 class TestGenerateProjectSettings:
     def test_default_bed_size(self):

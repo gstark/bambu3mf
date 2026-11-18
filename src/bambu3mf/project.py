@@ -25,6 +25,11 @@ BambuStudio compatibility notes (discovered empirically):
   system preset names (e.g. "Bambu Lab P1P 0.4 nozzle"), otherwise a
   "Customized Preset" warning dialog appears.
 
+* The BambuStudio CLI (``--info``, ``--slice``) needs complete settings in
+  ``project_settings.config``.  It segfaults on a file that holds only preset
+  names.  :mod:`bambu3mf.presets` expands the names from the system presets
+  of an installed BambuStudio.
+
 * BambuStudio assigns objects to plates by **spatial intersection**, not by
   the plate→object mapping in ``model_settings.config``.  Objects must be
   physically positioned within their target plate's coordinate region.
@@ -32,6 +37,7 @@ BambuStudio compatibility notes (discovered empirically):
 """
 
 import re
+import warnings
 import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -40,6 +46,7 @@ import lib3mf
 
 from bambu3mf.config_writer import generate_project_config, generate_project_settings
 from bambu3mf.plate import Plate
+from bambu3mf.presets import PresetLibrary, PresetNotFound, find_profiles_dir
 
 BAMBU_NAMESPACE = 'xmlns:BambuStudio="http://schemas.bambulab.com/package/2021"'
 BAMBU_3MF_VERSION = "1"
@@ -69,7 +76,9 @@ class BambuProject:
 
     Args:
         bed_size: Print bed dimensions as (width, height) in mm.
-            Defaults to (256, 256) for P1/X1 series printers.
+            Defaults to the ``printable_area`` of the printer preset.  If
+            the preset is not available, defaults to (256, 256) for P1/X1
+            series printers.
         app_version: Override the Application metadata string.
             Must match the target BambuStudio version to avoid warnings.
         description: Optional 3MF Description metadata text.
@@ -84,12 +93,17 @@ class BambuProject:
         filament_settings_id: Legacy shorthand — list of preset name strings.
             Converted to filaments dicts internally.  Ignored if ``filaments``
             is also provided.
+        profiles_dir: BambuStudio profile folder (``resources/profiles``).
+            Defaults to the folder of an installed BambuStudio.  When
+            ``printer_settings_id`` is set and the folder has the presets,
+            ``save`` writes the complete settings that the BambuStudio CLI
+            needs.  Otherwise it writes only the preset names, which the
+            GUI can open and the CLI cannot.
     """
 
-    def __init__(self, *, bed_size=DEFAULT_BED_SIZE, app_version=None,
+    def __init__(self, *, bed_size=None, app_version=None,
                  description=None, printer_settings_id="", print_settings_id="",
-                 filament_settings_id=None, filaments=None):
-        self.bed_size = bed_size
+                 filament_settings_id=None, filaments=None, profiles_dir=None):
         self.app_version = app_version or BAMBU_APPLICATION
         self.description = description
         self.printer_settings_id = printer_settings_id
@@ -103,6 +117,8 @@ class BambuProject:
         else:
             self.filaments = None
             self.filament_settings_id = None
+        self.profiles_dir = profiles_dir
+        self.bed_size = bed_size or self._preset_bed_size() or DEFAULT_BED_SIZE
         self.plates = []
         self._wrapper = lib3mf.Wrapper()
         self._model = self._wrapper.CreateModel()
@@ -187,9 +203,57 @@ class BambuProject:
             printer_settings_id=self.printer_settings_id,
             print_settings_id=self.print_settings_id,
             filaments=self.filaments,
+            preset_settings=self._preset_settings(),
         )
         with zipfile.ZipFile(path, "a", zipfile.ZIP_DEFLATED) as z:
             z.writestr("Metadata/project_settings.config", settings_json)
+
+    def _preset_library(self):
+        """Return the presets for the printer of this project, or ``None``."""
+        profiles_dir = self.profiles_dir or find_profiles_dir()
+        if not self.printer_settings_id or profiles_dir is None:
+            return None
+        return PresetLibrary(profiles_dir)
+
+    def _preset_bed_size(self):
+        """Return the bed size of the printer preset, or ``None``.
+
+        ``printable_area`` is a list of ``"XxY"`` corner points.
+        """
+        library = self._preset_library()
+        if library is None:
+            return None
+        try:
+            machine = library.resolve("machine", self.printer_settings_id)
+        except PresetNotFound:
+            return None  # save() gives the warning
+        corners = [
+            [float(n) for n in corner.split("x")]
+            for corner in machine["printable_area"]
+        ]
+        return tuple(
+            int(size) if size.is_integer() else size
+            for size in (max(axis) - min(axis) for axis in zip(*corners))
+        )
+
+    def _preset_settings(self):
+        """Return the complete settings of the named presets, or ``None``."""
+        library = self._preset_library()
+        if library is None:
+            return None
+        try:
+            return library.project_settings(
+                self.printer_settings_id,
+                self.print_settings_id,
+                [f.get("settings_id") for f in self.filaments or []],
+            )
+        except PresetNotFound as error:
+            warnings.warn(
+                f"{error.args[0]}. The file has only preset names, "
+                "so the BambuStudio CLI cannot load it.",
+                stacklevel=3,
+            )
+            return None
 
     def _inject_model_config(self, path):
         """Append ``Metadata/model_settings.config`` (XML) to the archive."""
