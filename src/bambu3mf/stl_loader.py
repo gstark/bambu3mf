@@ -22,6 +22,10 @@ def load_stl(model, path, *, bed_size=(256, 256), position=None):
     offset).  Plate grid offsets are applied later by
     :meth:`Plate._apply_plate_offsets` at save time.
 
+    The object is moved in Z so that its lowest point is on the bed.  An STL
+    file can start above or below Z=0, and BambuStudio does not slice a plate
+    with an object that floats above the bed.
+
     Args:
         model: A lib3mf Model instance (shared across the project).
         path: Path to the STL file.
@@ -32,7 +36,7 @@ def load_stl(model, path, *, bed_size=(256, 256), position=None):
     Returns:
         Dict with keys: ``resource_id`` (int), ``vertex_count`` (int),
         ``triangle_count`` (int), ``bounding_box`` (dict with min/max x/y/z),
-        ``center_offset`` (tuple of tx, ty for bed centering).
+        ``center_offset`` (tuple of tx, ty, tz that puts the object on the bed).
 
     Raises:
         FileNotFoundError: If the STL file does not exist.
@@ -74,18 +78,16 @@ def load_stl(model, path, *, bed_size=(256, 256), position=None):
         tx = bed_size[0] / 2 - cx
         ty = bed_size[1] / 2 - cy
 
+    tz = -bb["min_z"]
     bi = _get_last_build_item(model)
-    t = _identity_transform()
-    t.Fields[3][0] = tx
-    t.Fields[3][1] = ty
-    bi.SetObjectTransform(t)
+    bi.SetObjectTransform(_translation(tx, ty, tz))
 
     return {
         "resource_id": mesh.GetResourceID(),
         "vertex_count": mesh.GetVertexCount(),
         "triangle_count": mesh.GetTriangleCount(),
         "bounding_box": bb,
-        "center_offset": (tx, ty),
+        "center_offset": (tx, ty, tz),
     }
 
 
@@ -170,7 +172,8 @@ def create_component_group(model, meshes, *, bed_size=(256, 256),
 
     Returns:
         Dict with ``resource_id`` (of the component object) and
-        ``center_offset`` ``(tx, ty)`` for bed centering.
+        ``center_offset`` ``(tx, ty, tz)`` that puts the group on the bed.
+        The lowest point of the group is at Z=0.
     """
     identity = _identity_transform()
     comp_obj = model.AddComponentsObject()
@@ -184,6 +187,7 @@ def create_component_group(model, meshes, *, bed_size=(256, 256),
         "max_x": max(b["max_x"] for b in all_bbs),
         "min_y": min(b["min_y"] for b in all_bbs),
         "max_y": max(b["max_y"] for b in all_bbs),
+        "min_z": min(b["min_z"] for b in all_bbs),
     }
 
     if position is not None:
@@ -195,14 +199,12 @@ def create_component_group(model, meshes, *, bed_size=(256, 256),
         tx = bed_size[0] / 2 - cx
         ty = bed_size[1] / 2 - cy
 
-    t = _identity_transform()
-    t.Fields[3][0] = tx
-    t.Fields[3][1] = ty
-    model.AddBuildItem(comp_obj, t)
+    tz = -combined_bb["min_z"]
+    model.AddBuildItem(comp_obj, _translation(tx, ty, tz))
 
     return {
         "resource_id": comp_obj.GetResourceID(),
-        "center_offset": (tx, ty),
+        "center_offset": (tx, ty, tz),
     }
 
 
@@ -217,10 +219,10 @@ def update_build_item_plate_offset(model, resource_id, center_offset,
         bi = it.GetCurrent()
         obj = bi.GetObjectResource()
         if obj.GetResourceID() == resource_id:
-            t = _identity_transform()
-            t.Fields[3][0] = center_offset[0] + plate_offset_x
-            t.Fields[3][1] = center_offset[1] + plate_offset_y
-            bi.SetObjectTransform(t)
+            tx, ty, tz = center_offset
+            bi.SetObjectTransform(
+                _translation(tx + plate_offset_x, ty + plate_offset_y, tz)
+            )
             return
 
 
@@ -230,4 +232,13 @@ def _identity_transform():
     t.Fields[0][0] = 1.0
     t.Fields[1][1] = 1.0
     t.Fields[2][2] = 1.0
+    return t
+
+
+def _translation(tx, ty, tz):
+    """Create a lib3mf Transform that only translates."""
+    t = _identity_transform()
+    t.Fields[3][0] = tx
+    t.Fields[3][1] = ty
+    t.Fields[3][2] = tz
     return t
